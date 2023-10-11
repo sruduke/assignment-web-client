@@ -24,7 +24,7 @@ import re
 # you may use urllib to encode data appropriately
 import urllib.parse
 
-DEBUG = True
+DEBUG = False
 
 GET = 0
 POST = 1
@@ -65,7 +65,6 @@ class HTTPClient(object):
         self.port = 80
         #self.host = url_obj.netloc if url_obj.netloc[:4] == "www." else "www." + url_obj.netloc
         self.host = url_obj.netloc
-        print(self.host, self.port)
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -104,6 +103,8 @@ class HTTPClient(object):
         if args and len(args) > 0:
             encoded = urllib.parse.urlencode(args)
             req += f'{nl}Content-Type: application/x-www-form-urlencoded{nl}Content-Length: {len(encoded)}{nl * 2}{encoded}'
+        elif method == POST:
+            req += f'{nl}Content-Type: application/x-www-form-urlencoded{nl}Content-Length: 0'
         
         if DEBUG:
             print(req)
