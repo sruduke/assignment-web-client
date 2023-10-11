@@ -24,6 +24,9 @@ import re
 # you may use urllib to encode data appropriately
 import urllib.parse
 
+GET = 0
+POST = 1
+
 def help():
     print("httpclient.py [GET/POST] [URL]\n")
 
@@ -33,21 +36,51 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
+    def assign_host_port(self, url):
+        url_obj = urllib.parse(url)
+
+        self.port = url_obj.port
+        self.host = url_obj.hostname
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        return None
 
     def get_code(self, data):
-        return None
+        sections = data.split("\r\n")
+        fields = sections[0].split(" ")
+        return fields[1]
 
-    def get_headers(self,data):
-        return None
+    def get_headers(self, data):
+        fields = data.split("\r\n")[1:] #ignore the GET / HTTP/1.1
+        output = {}
+        for field in fields:
+            try:
+                key,value = field.split(':', 1)
+                output[key] = value
+            except:
+                continue
+
+        return output
 
     def get_body(self, data):
-        return None
+        sections = data.split("\r\n\r\n")
+        if len(sections) > 1:
+            return sections[1]
+            
+        return ""
+    
+    def form_request(self, url, method, args):
+        method_name = ['GET','POST'][method]
+        nl = "\r\n"
+
+        req = f'{method_name} {url} HTTP/1.1{nl}Host: {self.host}{nl}'
+        
+        if args and len(args) > 0:
+            encoded = urllib.parse.urlencode(args)
+            req += f'Content-Type: application/x-www-form-urlencoded{nl}Content-Length: {len(encoded)}{nl}{nl}{encoded}'
+        
+        return req.encode('utf-8')
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -67,15 +100,29 @@ class HTTPClient(object):
                 done = not part
         return buffer.decode('utf-8')
 
+    def handle_transaction(self, method, url, args=None):
+        self.assign_host_port(url)
+        self.connect(self.host, self.port)
+
+        # deal with sending request
+        request = self.form_request(url, method, args)
+        self.sendall(request)
+        self.socket.shutdown(socket.SHUT_WR)
+
+        # deal with receiving response
+        data = self.recvall(self.socket)
+        self.close()
+
+        print(data)
+        code = self.get_code(data)
+        body = self.get_body(data)
+        return HTTPResponse(int(code), body)
+
     def GET(self, url, args=None):
-        code = 500
-        body = ""
-        return HTTPResponse(code, body)
+        return self.handle_transaction(GET, url, args)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
-        return HTTPResponse(code, body)
+        return self.handle_transaction(POST, url, args)
 
     def command(self, url, command="GET", args=None):
         if (command == "POST"):
