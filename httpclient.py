@@ -39,18 +39,23 @@ class HTTPResponse(object):
         self.body = body
     
     def __repr__(self):
-        return f'Code: {self.code}\nBody:\n{self.body}'
+        return f'Response [{self.code}]'
 
 class HTTPClient(object):
 
     def assign_host_port(self, url):
+        # parse the URL to partition into appropriate components
         url_obj = urllib.parse.urlparse(url)
 
         if DEBUG:
             print(url_obj)
 
+        # default to root if not provided
         self.path = url_obj.path if url_obj.path else "/"
+        # add query string if provided
+        self.path += f'?{url_obj.query}' if url_obj.query else ""
 
+        # check if URL is in host:port format
         regex = r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b"
         if re.match(regex, url_obj.netloc):
             self.host, self.port = url_obj.netloc.split(":")
@@ -61,9 +66,8 @@ class HTTPClient(object):
 
             return
 
-        #self.port = 443 if url_obj.scheme == "https" else 80
+        # default port for http
         self.port = 80
-        #self.host = url_obj.netloc if url_obj.netloc[:4] == "www." else "www." + url_obj.netloc
         self.host = url_obj.netloc
 
     def connect(self, host, port):
@@ -88,6 +92,7 @@ class HTTPClient(object):
         return output
 
     def get_body(self, data):
+        # split the data into sections, separated by two newlines to get the body
         sections = data.split("\r\n\r\n")
         if len(sections) > 1:
             return sections[1]
@@ -96,19 +101,33 @@ class HTTPClient(object):
     
     def form_request(self, method, args):
         method_name = ['GET','POST'][method]
+        # nl, short for newline, is used to separate lines in the request
         nl = "\r\n"
 
-        req = f'{method_name} {self.path} HTTP/1.1{nl}Host: {self.host}'
+        # Firefox user agent on Linux taken from my browser web dev tools
+        firefox_ua = "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0"
+
+        # Request body template containing: 
+        #   method = GET/POST
+        #   path = /path/to/resource (with virtualhosting support)
+        #   host = www.example.com or host:port
+        #   user agent = firefox, provided to ensure security mechanisms don't block the request
+        #   accept = */* or wildcard, meaning we accept responses of all forms
+        #   connection = close, meaning we don't want to keep the connection open
+        req = f'{method_name} {self.path} HTTP/1.1{nl}Host: {self.host}{nl}User-Agent: {firefox_ua}{nl}Accept: */*{nl}Connection: Close'
         
         if args and len(args) > 0:
+            # URL encode the arguments and then attach it to the request
             encoded = urllib.parse.urlencode(args)
             req += f'{nl}Content-Type: application/x-www-form-urlencoded{nl}Content-Length: {len(encoded)}{nl * 2}{encoded}'
         elif method == POST:
+            # Even with no args, we still need to supply a content length for POST
             req += f'{nl}Content-Type: application/x-www-form-urlencoded{nl}Content-Length: 0'
         
         if DEBUG:
             print(req)
 
+        # add two newlines to the end of the request to indicate the end of the request
         return req + (nl * 2)
     
     def sendall(self, data):
@@ -128,6 +147,7 @@ class HTTPClient(object):
             else:
                 done = not part
         
+        # encountered decoding errors when testing with other URLs such as google.com, so added this try/except
         try:
             data = buffer.decode('utf-8')
         except:
@@ -142,14 +162,17 @@ class HTTPClient(object):
         # deal with sending request
         request = self.form_request(method, args)
         self.sendall(request)
-        self.socket.shutdown(socket.SHUT_WR)
 
+        # the forbidden line ~_~
+        # self.socket.shutdown(socket.SHUT_WR)
+        
         # deal with receiving response
         data = self.recvall(self.socket)
         self.close()
 
-        if DEBUG:
-            print(data)
+        # print response to stdout
+        line_break = "-" * 20
+        print(f"\n{line_break} RESULT BEGINNING {line_break}",data,f"{line_break}    RESULT END    {line_break}\n",sep="\n")
 
         code = self.get_code(data)
         body = self.get_body(data)
